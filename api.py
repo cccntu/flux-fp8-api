@@ -52,35 +52,36 @@ class GenerateArgs(BaseModel):
     init_image: Optional[str] = None
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not hasattr(app.state, "enable_profiling"):
         app.state.enable_profiling = True
-        
-    # Startup
-    if app.state.enable_profiling:
-        # stop recording after 4, to avoid trace size growing too big
-        app.state.prof =prof= profile(
-        #    schedule = tracing_schedule,
-        #    on_trace_ready = trace_handler,
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True,
-        )
-
-        prof.start()
-    else:
-        prof=None
+        app.state.prof = None
+    
+    # Just set up the state during lifespan
     yield
+    
     # Shutdown
-    if app.state.enable_profiling:
-        prof.stop()
+    if app.state.enable_profiling and app.state.prof is not None:
+        app.state.prof.stop()
         path = "server-trace.json"
-        prof.export_chrome_trace(path)
+        app.state.prof.export_chrome_trace(path)
+
+def setup_profiler(app: FastAPI):
+    @app.on_event("startup")
+    async def start_profiler():
+        if app.state.enable_profiling:
+            app.state.prof = profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            )
+            app.state.prof.start()
+
 #app = FastAPI()
 app = FastAPIApp(lifespan=lifespan)
+setup_profiler(app)
 
 
 @app.post("/generate")
