@@ -6,6 +6,10 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from platform import system
 
+from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
+from contextlib import asynccontextmanager
+
+
 if TYPE_CHECKING:
     from flux_pipeline import FluxPipeline
 
@@ -48,7 +52,32 @@ class GenerateArgs(BaseModel):
     init_image: Optional[str] = None
 
 
-app = FastAPIApp()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    if app.state.enable_profiling:
+        # stop recording after 4, to avoid trace size growing too big
+        app.state.prof =prof= profile(
+        #    schedule = tracing_schedule,
+        #    on_trace_ready = trace_handler,
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        )
+
+        prof.start()
+    else:
+        prof=None
+    yield
+    # Shutdown
+    if app.state.enable_profiling:
+        prof.stop()
+        path = "server-trace.json"
+        prof.export_chrome_trace(path)
+#app = FastAPI()
+app = FastAPIApp(lifespan=lifespan)
 
 
 @app.post("/generate")
