@@ -55,6 +55,9 @@ class GenerateArgs(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not hasattr(app.state, "enable_profiling"):
+        app.state.enable_profiling = True
+        
     # Startup
     if app.state.enable_profiling:
         # stop recording after 4, to avoid trace size growing too big
